@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>neural-core — distributed inference engine</title>
+<meta name="description" content="Neural Core development workspace">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0d1117;color:#c9d1d9;font-family:'JetBrains Mono',monospace;font-size:14px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  header{background:#161b22;border-bottom:1px solid #30363d;padding:8px 16px;display:flex;gap:8px;align-items:center}
+  .dot{width:12px;height:12px;border-radius:50%}
+  header span{margin-left:16px;color:#8b949e;font-size:12px}
+  .tabs{display:flex;background:#0d1117;border-bottom:1px solid #30363d}
+  .tab{padding:8px 18px;font-size:12px;color:#8b949e;border-right:1px solid #30363d}
+  .tab.active{color:#fff;border-top:2px solid #f78166;background:#0d1117}
+  main{flex:1;display:flex;overflow:hidden}
+  #editor{flex:1;padding:16px 0;overflow:hidden;line-height:1.6}
+  .line{display:flex;white-space:pre}
+  .ln{width:56px;text-align:right;padding-right:18px;color:#484f58;user-select:none}
+  aside{width:340px;border-left:1px solid #30363d;display:flex;flex-direction:column}
+  aside h3{font-size:11px;color:#8b949e;padding:10px 14px;border-bottom:1px solid #30363d;letter-spacing:1px}
+  #term{flex:1;padding:10px 14px;font-size:12px;overflow:hidden;line-height:1.7}
+  .bar{height:4px;background:#21262d;margin:4px 14px 12px;border-radius:2px;overflow:hidden}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,#3fb950,#58a6ff);transition:width 1s}
+  footer{background:#1f6feb;color:#fff;font-size:11px;padding:3px 14px;display:flex;justify-content:space-between}
+  .cursor{display:inline-block;width:8px;background:#58a6ff;animation:b 1s steps(1) infinite}
+  @keyframes b{50%{opacity:0}}
+  .k{color:#ff7b72}.f{color:#d2a8ff}.s{color:#a5d6ff}.c{color:#8b949e;font-style:italic}.n{color:#79c0ff}.t{color:#ffa657}
+  .ok{color:#3fb950}.warn{color:#d29922}.info{color:#58a6ff}
+</style>
+</head>
+<body>
+<header>
+  <div class="dot" style="background:#ff5f56"></div><div class="dot" style="background:#ffbd2e"></div><div class="dot" style="background:#27c93f"></div>
+  <span>neural-core — ~/projects/neural-core/src/engine</span>
+</header>
+<div class="tabs" id="tabs"></div>
+<main>
+  <section id="editor" aria-label="Kod editörü"></section>
+  <aside>
+    <h3>CLUSTER STATUS</h3>
+    <div style="padding:6px 14px;font-size:11px;color:#8b949e">GPU nodes <span id="gpu" style="float:right" class="ok">128 / 128</span></div>
+    <div class="bar"><i id="b1" style="width:72%"></i></div>
+    <div style="padding:0 14px;font-size:11px;color:#8b949e">Model training <span id="pct" style="float:right">72%</span></div>
+    <div class="bar"><i id="b2" style="width:40%"></i></div>
+    <h3>TERMINAL</h3>
+    <div id="term"></div>
+  </aside>
+</main>
+<footer><span>⎇ main* &nbsp; ✓ 0 errors</span><span id="clock"></span><span id="lang">Python 3.12 · UTF-8</span></footer>
+
+<script>
+const py = [
+"<span class='c'># Neural Core v4.2 — distributed inference engine</span>",
+"<span class='k'>import</span> asyncio",
+"<span class='k'>import</span> numpy <span class='k'>as</span> np",
+"<span class='k'>from</span> core.cluster <span class='k'>import</span> <span class='t'>NodeMesh</span>, <span class='t'>QuantumScheduler</span>",
+"<span class='k'>from</span> core.crypto <span class='k'>import</span> <span class='t'>AES256Pipeline</span>",
+"",
+"<span class='k'>class</span> <span class='t'>InferenceEngine</span>:",
+"    <span class='c'>\"\"\"Handles real-time tensor routing across 128 GPU nodes.\"\"\"</span>",
+"",
+"    <span class='k'>def</span> <span class='f'>__init__</span>(self, nodes: <span class='n'>int</span> = <span class='n'>128</span>):",
+"        self.mesh = <span class='t'>NodeMesh</span>(size=nodes, topology=<span class='s'>'hypercube'</span>)",
+"        self.scheduler = <span class='t'>QuantumScheduler</span>(latency_budget_ms=<span class='n'>4</span>)",
+"        self.cipher = <span class='t'>AES256Pipeline</span>(rotate_keys=<span class='k'>True</span>)",
+"        self.weights = np.random.randn(<span class='n'>4096</span>, <span class='n'>4096</span>).astype(np.float16)",
+"",
+"    <span class='k'>async def</span> <span class='f'>forward</span>(self, batch):",
+"        shards = self.mesh.<span class='f'>partition</span>(batch, strategy=<span class='s'>'tensor-parallel'</span>)",
+"        tasks = [self.<span class='f'>_compute</span>(s) <span class='k'>for</span> s <span class='k'>in</span> shards]",
+"        results = <span class='k'>await</span> asyncio.<span class='f'>gather</span>(*tasks)",
+"        <span class='k'>return</span> self.mesh.<span class='f'>all_reduce</span>(results)",
+"",
+"    <span class='k'>async def</span> <span class='f'>_compute</span>(self, shard):",
+"        encrypted = self.cipher.<span class='f'>encrypt</span>(shard)",
+"        node = <span class='k'>await</span> self.scheduler.<span class='f'>acquire</span>(priority=<span class='s'>'realtime'</span>)",
+"        out = <span class='k'>await</span> node.<span class='f'>matmul</span>(encrypted, self.weights)",
+"        <span class='k'>return</span> self.cipher.<span class='f'>decrypt</span>(out)",
+"",
+"    <span class='k'>def</span> <span class='f'>optimize</span>(self, lr: <span class='n'>float</span> = <span class='n'>3e-4</span>):",
+"        grad = self.mesh.<span class='f'>collect_gradients</span>()",
+"        self.weights -= lr * np.<span class='f'>clip</span>(grad, -<span class='n'>1.0</span>, <span class='n'>1.0</span>)",
+"        self.scheduler.<span class='f'>rebalance</span>(load_factor=<span class='n'>0.87</span>)",
+"",
+"<span class='k'>async def</span> <span class='f'>main</span>():",
+"    engine = <span class='t'>InferenceEngine</span>(nodes=<span class='n'>128</span>)",
+"    <span class='k'>for</span> epoch <span class='k'>in</span> <span class='f'>range</span>(<span class='n'>10_000</span>):",
+"        batch = <span class='k'>await</span> stream.<span class='f'>next_batch</span>(size=<span class='n'>2048</span>)",
+"        <span class='k'>await</span> engine.<span class='f'>forward</span>(batch)",
+"        engine.<span class='f'>optimize</span>()",
+"",
+"<span class='k'>if</span> __name__ == <span class='s'>'__main__'</span>:",
+"    asyncio.<span class='f'>run</span>(<span class='f'>main</span>())",
+""];
+const rs = [
+"<span class='c'>// cluster.rs — lock-free node mesh</span>",
+"<span class='k'>use</span> std::sync::atomic::{<span class='t'>AtomicU64</span>, <span class='t'>Ordering</span>};",
+"<span class='k'>use</span> tokio::net::<span class='t'>TcpStream</span>;",
+"",
+"<span class='k'>pub struct</span> <span class='t'>Node</span> {",
+"    id: <span class='t'>u32</span>,",
+"    load: <span class='t'>AtomicU64</span>,",
+"    peers: <span class='t'>Vec</span>&lt;<span class='t'>Arc</span>&lt;<span class='t'>Node</span>&gt;&gt;,",
+"}",
+"",
+"<span class='k'>impl</span> <span class='t'>Node</span> {",
+"    <span class='k'>pub async fn</span> <span class='f'>gossip</span>(&amp;self) -&gt; <span class='t'>Result</span>&lt;(), <span class='t'>MeshError</span>&gt; {",
+"        <span class='k'>for</span> peer <span class='k'>in</span> self.peers.<span class='f'>iter</span>() {",
+"            <span class='k'>let</span> stream = <span class='t'>TcpStream</span>::<span class='f'>connect</span>(peer.<span class='f'>addr</span>()).<span class='k'>await</span>?;",
+"            <span class='k'>let</span> state = self.load.<span class='f'>load</span>(<span class='t'>Ordering</span>::Acquire);",
+"            stream.<span class='f'>write_u64</span>(state).<span class='k'>await</span>?;",
+"        }",
+"        <span class='t'>Ok</span>(())",
+"    }",
+"",
+"    <span class='k'>pub fn</span> <span class='f'>steal_work</span>(&amp;self) -&gt; <span class='t'>Option</span>&lt;<span class='t'>Task</span>&gt; {",
+"        self.peers.<span class='f'>iter</span>()",
+"            .<span class='f'>max_by_key</span>(|p| p.load.<span class='f'>load</span>(<span class='t'>Ordering</span>::Relaxed))",
+"            .<span class='f'>and_then</span>(|p| p.<span class='f'>pop_task</span>())",
+"    }",
+"}",
+""];
+const go = [
+"<span class='c'>// crypto_layer.go — zero-knowledge auth</span>",
+"<span class='k'>package</span> crypto",
+"",
+"<span class='k'>import</span> (",
+"    <span class='s'>\"crypto/ed25519\"</span>",
+"    <span class='s'>\"crypto/sha3\"</span>",
+")",
+"",
+"<span class='k'>type</span> <span class='t'>Prover</span> <span class='k'>struct</span> {",
+"    secret  []<span class='t'>byte</span>",
+"    nonce   <span class='t'>uint64</span>",
+"}",
+"",
+"<span class='k'>func</span> (p *<span class='t'>Prover</span>) <span class='f'>Commit</span>(challenge []<span class='t'>byte</span>) []<span class='t'>byte</span> {",
+"    h := sha3.<span class='f'>New512</span>()",
+"    h.<span class='f'>Write</span>(p.secret)",
+"    h.<span class='f'>Write</span>(challenge)",
+"    p.nonce++",
+"    <span class='k'>return</span> h.<span class='f'>Sum</span>(<span class='k'>nil</span>)",
+"}",
+"",
+"<span class='k'>func</span> <span class='f'>Verify</span>(pub ed25519.<span class='t'>PublicKey</span>, msg, sig []<span class='t'>byte</span>) <span class='t'>bool</span> {",
+"    <span class='k'>if</span> <span class='f'>len</span>(sig) != ed25519.SignatureSize {",
+"        <span class='k'>return false</span>",
+"    }",
+"    <span class='k'>return</span> ed25519.<span class='f'>Verify</span>(pub, msg, sig)",
+"}",
+""];
+const ts = [
+"<span class='c'>// dashboard.ts — realtime telemetry stream</span>",
+"<span class='k'>import</span> { <span class='t'>WebSocketServer</span> } <span class='k'>from</span> <span class='s'>'ws'</span>;",
+"",
+"<span class='k'>interface</span> <span class='t'>Metric</span> { node: <span class='t'>number</span>; gpu: <span class='t'>number</span>; temp: <span class='t'>number</span> }",
+"",
+"<span class='k'>const</span> wss = <span class='k'>new</span> <span class='t'>WebSocketServer</span>({ port: <span class='n'>8443</span> });",
+"",
+"wss.<span class='f'>on</span>(<span class='s'>'connection'</span>, (socket) =&gt; {",
+"  <span class='k'>const</span> timer = <span class='f'>setInterval</span>(<span class='k'>async</span> () =&gt; {",
+"    <span class='k'>const</span> metrics: <span class='t'>Metric</span>[] = <span class='k'>await</span> cluster.<span class='f'>snapshot</span>();",
+"    <span class='k'>const</span> hot = metrics.<span class='f'>filter</span>(m =&gt; m.temp &gt; <span class='n'>82</span>);",
+"    <span class='k'>if</span> (hot.length) <span class='k'>await</span> scheduler.<span class='f'>throttle</span>(hot);",
+"    socket.<span class='f'>send</span>(<span class='t'>JSON</span>.<span class='f'>stringify</span>(metrics));",
+"  }, <span class='n'>250</span>);",
+"  socket.<span class='f'>on</span>(<span class='s'>'close'</span>, () =&gt; <span class='f'>clearInterval</span>(timer));",
+"});",
+""];
+const sql = [
+"<span class='c'>-- analytics.sql — model performance report</span>",
+"<span class='k'>WITH</span> latency <span class='k'>AS</span> (",
+"  <span class='k'>SELECT</span> node_id,",
+"         <span class='f'>percentile_cont</span>(<span class='n'>0.99</span>) <span class='k'>WITHIN GROUP</span> (<span class='k'>ORDER BY</span> ms) <span class='k'>AS</span> p99",
+"  <span class='k'>FROM</span> inference_logs",
+"  <span class='k'>WHERE</span> created_at &gt; <span class='f'>now</span>() - <span class='k'>INTERVAL</span> <span class='s'>'1 hour'</span>",
+"  <span class='k'>GROUP BY</span> node_id",
+")",
+"<span class='k'>SELECT</span> n.region, <span class='f'>avg</span>(l.p99) <span class='k'>AS</span> avg_p99, <span class='f'>count</span>(*) <span class='k'>AS</span> nodes",
+"<span class='k'>FROM</span> latency l",
+"<span class='k'>JOIN</span> nodes n <span class='k'>ON</span> n.id = l.node_id",
+"<span class='k'>GROUP BY</span> n.region",
+"<span class='k'>ORDER BY</span> avg_p99 <span class='k'>ASC</span>;",
+""];
+const files=[["inference_engine.py",py,"Python 3.12"],["cluster.rs",rs,"Rust 1.82"],["crypto_layer.go",go,"Go 1.23"],["dashboard.ts",ts,"TypeScript"],["analytics.sql",sql,"PostgreSQL"]];
+let fi=0, code=py;
+function renderTabs(){
+  document.getElementById('tabs').innerHTML=files.map((f,i)=>`<div class="tab${i===fi?' active':''}">${f[0]}</div>`).join('');
+  document.getElementById('lang').textContent=files[fi][2]+' · UTF-8';
+}
+function switchFile(){
+  let n; do{n=Math.random()*files.length|0}while(n===fi);
+  fi=n;code=files[fi][1];ed.innerHTML='';lineNo=1;lineEl=null;renderTabs();
+}
+const logs=[["ok","✓ node-{n} handshake complete"],["info","→ syncing gradients ({n} MB)"],["ok","✓ tensor shard {n} verified"],["warn","⚠ latency spike 4.{n}ms — rebalancing"],["info","→ rotating AES keys"],["ok","✓ checkpoint saved epoch_{n}"]];
+
+const ed=document.getElementById('editor'),term=document.getElementById('term');
+let li=0,ci=0,lineEl=null,lineNo=1;
+
+function newLine(){
+  lineEl=document.createElement('div');lineEl.className='line';
+  lineEl.innerHTML=`<span class="ln">${lineNo++}</span><span class="code"></span>`;
+  ed.appendChild(lineEl);
+  while(ed.children.length>Math.floor(ed.clientHeight/22.4)) ed.removeChild(ed.firstChild);
+}
+// HTML etiketlerini bozmadan karakter karakter yaz
+function typeStep(){
+  if(!lineEl) newLine();
+  const src=code[li], target=lineEl.querySelector('.code');
+  if(ci>=src.length){
+    target.innerHTML=src||' ';
+    li++;ci=0;
+    if(li>=code.length){li=0;return setTimeout(()=>{switchFile();typeStep()},2500);}
+    newLine();
+    return setTimeout(typeStep,250+Math.random()*500);
+  }
+  if(src[ci]==='<') ci=src.indexOf('>',ci)+1; else if(src[ci]==='&') ci=src.indexOf(';',ci)+1; else ci++;
+  target.innerHTML=src.slice(0,ci)+'<span class="cursor">&nbsp;</span>';
+  setTimeout(typeStep,60+Math.random()*120); // yavaş, insan gibi
+}
+function addLog(){
+  const [c,t]=logs[Math.random()*logs.length|0];
+  const d=document.createElement('div');d.className=c;d.textContent=t.replace('{n}',Math.random()*999|0);
+  term.appendChild(d);if(term.children.length>18)term.removeChild(term.firstChild);
+  setTimeout(addLog,1500+Math.random()*2500);
+}
+let p=72;setInterval(()=>{p=p>=99?40:p+1;b1.style.width=p+'%';pct.textContent=p+'%';b2.style.width=(30+Math.random()*60)+'%'},4000);
+setInterval(()=>clock.textContent=new Date().toLocaleTimeString('tr-TR'),1000);
+fi=Math.random()*files.length|0;code=files[fi][1];renderTabs();
+typeStep();addLog();
+</script>
+</body>
+</html>
